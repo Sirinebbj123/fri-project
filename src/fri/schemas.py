@@ -24,6 +24,9 @@ class ChunkMetadata(BaseModel):
     company: str
     year: int
     doc_type: DocType
+    quarter: int | None = Field(
+        default=None, ge=1, le=4, description="Trimestre d'un 10-Q (PEPSICO_2023Q1_10Q -> 1)"
+    )
     doc_name: str = Field(description="Nom du PDF FinanceBench, ex. 3M_2018_10K")
     page: int = Field(ge=1, description="Numéro de page (1-indexé) pour la citation")
 

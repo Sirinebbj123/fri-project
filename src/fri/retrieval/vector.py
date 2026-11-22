@@ -84,6 +84,7 @@ def chunk_to_record(chunk: Chunk) -> dict[str, Any]:
         "doc_type": m.doc_type.value,
         "doc_name": m.doc_name,
         "page": m.page,
+        **({"quarter": m.quarter} if m.quarter else {}),  # Chroma refuse None
     }
 
 
@@ -92,6 +93,7 @@ def record_to_chunk(chunk_id: str, text: str, record: dict[str, Any]) -> Chunk:
         company=record["company"],
         year=int(record["year"]),
         doc_type=DocType(record["doc_type"]),
+        quarter=record.get("quarter"),
         doc_name=record["doc_name"],
         page=int(record["page"]),
     )
@@ -169,7 +171,7 @@ class VectorRetriever:
             )
 
     def search(self, query: str, k: int = 8, filters: dict | None = None) -> list[SearchResult]:
-        """Les ``k`` chunks les plus proches ; filtre société / année avec ``where``."""
+        """Les ``k`` chunks les plus proches ; filtre société / année / type avec ``where``."""
         if not query.strip() or k < 1 or len(self) == 0:
             return []
         found = self.collection.query(
