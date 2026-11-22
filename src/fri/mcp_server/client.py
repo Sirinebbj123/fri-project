@@ -149,8 +149,20 @@ def _cite(c: dict[str, Any]) -> str:
     return f"[{c['company']}, {c['year']}, p. {c['page']}]"
 
 
-def _money(value: float) -> str:
-    return f"{value:,.0f}".replace(",", " ") + " M$"
+_UNIT_LABELS = {"USD millions": "M$", "USD per share": "$ par action", "%": "%"}
+
+
+def _amount(value: float, unit: str | None = "USD millions", sign: bool = False) -> str:
+    """32765 -> '32 765 M$' ; 8.89 (USD per share) -> '8,89 $ par action' ; 21.4 (%) -> '21,4 %'.
+
+    Deux décimales au plus : un BPA de 8,89 $ ne doit pas s'afficher « 9 M$ ».
+    """
+    text = f"{value:+,.2f}" if sign else f"{value:,.2f}"
+    text = text.rstrip("0").rstrip(".").replace(",", " ").replace(".", ",")
+    unit = unit or "USD millions"
+    if unit == "%" and sign:
+        return f"{text} points"
+    return f"{text} {_UNIT_LABELS.get(unit, unit)}"
 
 
 def summarize(call: Call) -> list[str]:
@@ -166,15 +178,16 @@ def summarize(call: Call) -> list[str]:
             lines.append(f"  {_cite(m)} score {r['score']:.3f} : {text[:110]}...")
         return lines
     if call.tool == "get_financial_metric":
-        return [f"{data['metric']} = {_money(data['value'])}  {_cite(data['citation'])}"]
+        value = _amount(data["value"], data.get("unit"))
+        return [f"{data['metric']} = {value}  {_cite(data['citation'])}"]
     if call.tool == "compare_years":
         a, b = data["year_a"], data["year_b"]
         pct = data.get("pct_change")
         return [
-            f"{a['year']} : {_money(a['value'])}  {_cite(a['citation'])}",
-            f"{b['year']} : {_money(b['value'])}  {_cite(b['citation'])}",
-            f"écart : {data['delta']:+,.0f} M$".replace(",", " ")
-            + (f"  ({pct:+.1f} %)" if pct is not None else ""),
+            f"{a['year']} : {_amount(a['value'], a.get('unit'))}  {_cite(a['citation'])}",
+            f"{b['year']} : {_amount(b['value'], b.get('unit'))}  {_cite(b['citation'])}",
+            f"écart : {_amount(data['delta'], b.get('unit'), sign=True)}"
+            + (f"  ({pct:+.1f} %)" if pct is not None and b.get("unit") != "%" else ""),
         ]
     return [json.dumps(data, ensure_ascii=False)[:300]]
 

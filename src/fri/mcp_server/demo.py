@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import re
 
+from fri.ingestion.metadata import company_key
 from fri.schemas import Chunk, ChunkMetadata, DocType, SearchResult
 
 _WORD_RE = re.compile(r"[a-z0-9]+")
@@ -31,7 +32,7 @@ class InMemoryRetriever:
         scored: list[tuple[float, Chunk]] = []
         for chunk in self.chunks:
             meta = chunk.metadata
-            if company and meta.company.casefold() != company.casefold():
+            if company and company_key(meta.company) != company_key(company):
                 continue
             if year and meta.year != year:
                 continue

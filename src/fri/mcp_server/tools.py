@@ -11,7 +11,7 @@ from collections.abc import Callable
 from typing import Any, Protocol
 
 from fri.ingestion.metadata import company_key
-from fri.schemas import MetricValue, SearchResult, YearComparison
+from fri.schemas import DocType, MetricValue, SearchResult, YearComparison
 
 
 class Retriever(Protocol):
@@ -78,9 +78,17 @@ def _load_index_retriever() -> Retriever:
     return HybridRetriever.load(settings.index_dir)
 
 
-def _same_company(a: str, b: str) -> bool:
-    """'American Express' et 'AMERICANEXPRESS' désignent la même société."""
-    return company_key(a) == company_key(b)
+_MIN_PREFIX = 4  # « AMD » ne doit pas valoir pour « AMDOCS »
+
+
+def _same_company(indexed: str, asked: str) -> bool:
+    """La société d'un passage (nom du fichier) est-elle celle demandée ?
+
+    'AMERICANEXPRESS' = 'American Express' ; 'APPLE' = 'Apple Inc.' ;
+    'JPMORGAN' = 'JPMorgan Chase & Co.' (le nom de l'index est le début du nom demandé).
+    """
+    a, b = company_key(indexed), company_key(asked)
+    return a == b or (len(a) >= _MIN_PREFIX and b.startswith(a))
 
 
 def search_filings(
@@ -137,12 +145,23 @@ def metric_queries(metric: str) -> list[str]:
 
 
 def _search_metric(metric: str, company: str, year: int, k: int) -> list[SearchResult]:
-    """Fusionne les résultats des requêtes de ``metric_queries``, sans doublon."""
+    """Fusionne les résultats des requêtes de ``metric_queries``, sans doublon.
+
+    Une métrique annuelle se lit dans le 10-K : si le rapport annuel de l'année a des
+    passages, on écarte ceux des 10-Q de la même année (un trimestre n'est pas l'exercice).
+    """
     merged: dict[str, SearchResult] = {}
     for query in metric_queries(metric):
-        for r in search_filings(query, company=company, year=year, k=k):
+        for r in search_filings(query, company=company, year=year, k=k * 2):
             merged.setdefault(r.chunk.id, r)
-    return list(merged.values())[:k]
+    results = list(merged.values())
+    annual = [r for r in results if r.chunk.metadata.doc_type == DocType.TEN_K]
+    return (annual or results)[:k]
+
+
+# Le 10-K de l'année N donne aussi les chiffres de N-1 (et N-2 pour le compte de résultat) :
+# si le rapport de l'année manque ou n'a pas la valeur, on cherche dans les suivants.
+NEXT_REPORTS = 1
 
 
 def get_financial_metric(
@@ -154,8 +173,11 @@ def get_financial_metric(
 ) -> MetricValue:
     """Renvoie une valeur chiffrée avec sa source.
 
-    Cherche les passages de la société et de l'année, puis l'extracteur (le LLM par
-    défaut) lit la valeur. La citation pointe le passage d'où vient la valeur.
+    ``year`` est l'exercice de la donnée, pas forcément celui du rapport : on cherche
+    d'abord dans le rapport de ``year``, puis (s'il manque ou n'a pas la valeur) dans
+    le rapport suivant, qui reprend l'exercice précédent en comparaison. L'extracteur
+    (le LLM par défaut) lit la valeur ; la citation pointe le passage d'où elle vient
+    (donc le rapport réellement utilisé).
     Lève MetricNotFoundError si la valeur n'est pas trouvée.
     """
     from fri.agent.citations import citation_from_result
@@ -166,12 +188,19 @@ def get_financial_metric(
     if not company or not company.strip():
         raise ValueError("La société (company) est obligatoire.")
 
-    results = _search_metric(metric, company, year, k)
-    if not results:
-        raise MetricNotFoundError(f"Aucun passage pour {company} {year} sur « {metric} ».")
-
-    found = (extractor or get_metric_extractor())(company, year, metric, results)
-    if found is None:
+    extract = extractor or get_metric_extractor()
+    searched = False
+    for report_year in range(year, year + NEXT_REPORTS + 1):
+        results = _search_metric(metric, company, report_year, k)
+        if not results:
+            continue
+        searched = True
+        found = extract(company, year, metric, results)
+        if found is not None:
+            break
+    else:
+        if not searched:
+            raise MetricNotFoundError(f"Aucun passage pour {company} {year} sur « {metric} ».")
         raise MetricNotFoundError(f"« {metric} » introuvable pour {company} {year}.")
 
     source = results[found.passage - 1]
@@ -201,7 +230,11 @@ def compare_years(
     year_b: int,
     extractor: MetricExtractor | None = None,
 ) -> YearComparison:
-    """Compare une métrique d'une société entre deux années (year_a = année de référence)."""
+    """Compare une métrique d'une société entre deux exercices (year_a = année de référence).
+
+    Chaque valeur peut venir du rapport de son année ou du suivant (voir
+    ``get_financial_metric``) : un seul 10-K suffit souvent pour deux exercices.
+    """
     if year_a == year_b:
         raise ValueError("Les deux années à comparer doivent être différentes.")
     a = get_financial_metric(company, year_a, metric, extractor=extractor)

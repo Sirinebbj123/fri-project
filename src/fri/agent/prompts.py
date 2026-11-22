@@ -30,9 +30,18 @@ METRIC_PROMPT = """Passages :
 {context}
 
 Trouve la valeur de « {metric} » pour {company} sur l'exercice {year}.
-Réponds en JSON : {{"value": <nombre ou null>, "unit": "USD millions", "passage": <numéro>}}
-- "value" : le nombre en millions de dollars (convertis si le passage est en milliards ou en
-  milliers), sans séparateur de milliers ; null si la valeur n'est pas dans les passages.
+Un rapport contient souvent plusieurs exercices (ex. le 10-K 2018 donne aussi 2017) :
+prends la colonne de l'exercice {year}, même si le rapport est d'une autre année.
+Réponds en JSON : {{"value": <nombre ou null>, "unit": "<unité>", "passage": <numéro>}}
+- "unit" : choisis selon la nature de la métrique :
+  - montant en dollars (chiffre d'affaires, résultat, capex…) : "USD millions"
+    (convertis si le passage est en milliards ou en milliers) ;
+  - montant par action (EPS / BPA, dividende par action) : "USD per share", sans conversion ;
+  - pourcentage (marge, taux, croissance) : "%" (ex. 21.4 pour 21,4 %) ;
+  - nombre d'actions : "millions of shares" ;
+  - ratio sans unité (ex. current ratio) : "ratio".
+- "value" : le nombre dans cette unité, sans séparateur de milliers ;
+  null si la valeur n'est pas dans les passages.
 - "passage" : le numéro du passage d'où vient la valeur.
 Ne calcule rien et n'invente rien : recopie une valeur présente dans un passage."""
 

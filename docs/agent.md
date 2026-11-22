@@ -150,3 +150,9 @@ Ce qui est vérifié : filtres société / année, garde-fou contre un retriever
 ## Suite
 
 - Mesurer avec FinanceBench (rôle 3) : exactitude des valeurs extraites et taux de bonnes routes ; si les règles du routeur se trompent souvent, passer à un routeur LLM (`ROUTER_PROMPT`).
+
+## Années FY, année des données et unités
+
+Le routeur lit « FY2021 » et « FY22 » ; `compare_years` peut lire 2017 dans le 10-K 2018 ;
+l'unité dépend de la métrique (EPS en `USD per share`, marge en `%`). Détails :
+[`corrections-agent.md`](corrections-agent.md).

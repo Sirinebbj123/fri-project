@@ -7,8 +7,9 @@
 - `retrieve` + `answer` : RAG classique, réponse citée [Société, Année, p. X] ;
   pour un calcul, le LLM doit montrer les valeurs utilisées et le calcul.
 - `compare` : le LLM lit la société et la métrique dans la question, les années sont
-  lues par regex, puis l'outil `compare_years` calcule l'écart. Si ça échoue (année
-  manquante, valeur introuvable), on retombe sur le RAG classique.
+  lues par regex (« 2021 », « FY2021 », « FY22 », « fiscal 2021 »), puis l'outil
+  `compare_years` calcule l'écart. Si ça échoue (année manquante, valeur introuvable),
+  on retombe sur le RAG classique.
 """
 
 from __future__ import annotations
@@ -34,7 +35,14 @@ from fri.schemas import Answer, SearchResult, YearComparison
 
 ROUTES = ("simple", "calcul", "comparaison")
 
-_YEAR_RE = re.compile(r"\b(?:19|20)\d{2}\b")
+# « 2021 » seul, ou précédé de FY / fiscal (year) : « FY2021 », « FY 2021 », « FY'22 », « FY22 ».
+# FinanceBench écrit presque toujours « FY2021 » : sans la 1re branche, `\b` ne coupe pas
+# entre « FY » et « 2021 » et aucune année n'était trouvée.
+_YEAR_RE = re.compile(
+    r"\b(?:FY|fiscal(?:\s+year)?)\s*'?(?P<fy>(?:19|20)\d{2}|\d{2})\b"
+    r"|\b(?P<year>(?:19|20)\d{2})\b",
+    re.I,
+)
 _COMPARE_WORDS = re.compile(
     r"\b(compar\w*|vs\.?|versus|évolu\w*|evolu\w*|chang\w*|increas\w*|decreas\w*|"
     r"grow\w*|growth|augment\w*|baiss\w*|hausse|diminu\w*|between|entre|"
@@ -50,10 +58,14 @@ _CALC_WORDS = re.compile(
 
 
 def find_years(text: str) -> list[int]:
-    """Années distinctes citées dans la question, dans l'ordre d'apparition."""
+    """Années distinctes citées dans la question, dans l'ordre d'apparition.
+
+    ``"Compare FY2021 and FY22"`` -> ``[2021, 2022]`` (``FY22`` = 2022).
+    """
     years: list[int] = []
     for match in _YEAR_RE.finditer(text):
-        year = int(match.group(0))
+        raw = match["fy"] or match["year"]
+        year = int(raw) if len(raw) == 4 else 2000 + int(raw)
         if year not in years:
             years.append(year)
     return years
@@ -69,8 +81,11 @@ def classify_question(question: str) -> str:
 
 
 def _fmt(value: float) -> str:
-    """32765.0 -> '32 765' ; 12.5 -> '12,5' (format français)."""
-    text = f"{value:,.0f}" if float(value).is_integer() else f"{value:,.1f}"
+    """32765.0 -> '32 765' ; 12.5 -> '12,5' ; 5.61 -> '5,61' (format français).
+
+    Deux décimales au plus : un BPA (EPS) de 5,61 $ ne doit pas devenir 5,6.
+    """
+    text = f"{value:,.2f}".rstrip("0").rstrip(".")
     return text.replace(",", " ").replace(".", ",")
 
 
@@ -78,15 +93,20 @@ def format_comparison(comp: YearComparison) -> str:
     """Réponse rédigée à partir du résultat de compare_years (pas de LLM : chiffres exacts)."""
     a, b = comp.year_a, comp.year_b
     sign = "+" if comp.delta >= 0 else "-"
-    pct = (
-        f" ({'+' if comp.pct_change >= 0 else '-'}{_fmt(abs(comp.pct_change))} %)"
-        if comp.pct_change is not None
-        else ""
-    )
+    if b.unit == "%":
+        # Une marge passe de 20 % à 22 % : l'écart est de +2 points, pas de « +10 % ».
+        gap = f"{sign}{_fmt(abs(comp.delta))} point{'s' if abs(comp.delta) >= 2 else ''}"
+    else:
+        pct = (
+            f" ({'+' if comp.pct_change >= 0 else '-'}{_fmt(abs(comp.pct_change))} %)"
+            if comp.pct_change is not None
+            else ""
+        )
+        gap = f"{sign}{_fmt(abs(comp.delta))} {b.unit}{pct}"
     return (
         f"{comp.metric} de {comp.company} : {_fmt(a.value)} {a.unit} en {a.year} {a.citation}, "
         f"contre {_fmt(b.value)} {b.unit} en {b.year} {b.citation}. "
-        f"Écart : {sign}{_fmt(abs(comp.delta))} {b.unit}{pct}."
+        f"Écart : {gap}."
     )
 
 

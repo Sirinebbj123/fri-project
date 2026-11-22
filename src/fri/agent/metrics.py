@@ -66,6 +66,44 @@ def to_number(raw: Any) -> float | None:
     return -value if negative else value
 
 
+# Unités renvoyées par les extracteurs (voir METRIC_PROMPT).
+USD_MILLIONS = "USD millions"
+PER_SHARE = "USD per share"
+PERCENT = "%"
+SHARES = "millions of shares"
+RATIO = "ratio"
+
+_PER_SHARE_RE = re.compile(r"per\s+share|/\s*share|par\s+action|\beps\b|\bbpa\b", re.I)
+_PERCENT_RE = re.compile(r"%|percent|pourcent", re.I)
+_SHARES_RE = re.compile(r"shares|actions", re.I)
+_RATIO_RE = re.compile(r"ratio|times|\bx\b|fois", re.I)
+_SCALES = (("billion", 1000.0), ("milliard", 1000.0), ("thousand", 0.001), ("millier", 0.001))
+
+
+def normalize_unit(value: float, unit: str | None, metric: str = "") -> tuple[float, str]:
+    """Ramène l'unité du LLM à une des unités connues, sans toucher aux EPS ni aux %.
+
+    ``(3.2, "USD billions") -> (3200.0, "USD millions")`` ;
+    ``(5.61, "$ per share") -> (5.61, "USD per share")`` ; ``(21.4, "percent") -> (21.4, "%")``.
+    Sans unité, on la devine d'après le nom de la métrique (``EPS`` -> par action).
+    """
+    raw = (unit or "").strip()
+    text = raw or metric
+    if _PER_SHARE_RE.search(text):
+        return value, PER_SHARE
+    if _PERCENT_RE.search(text) or (not raw and re.search(r"margin|marge|rate|taux", metric, re.I)):
+        return value, PERCENT
+    if _SHARES_RE.search(raw):
+        return value, SHARES
+    if _RATIO_RE.search(raw):
+        return value, RATIO
+    lowered = raw.lower()
+    for word, factor in _SCALES:
+        if word in lowered:
+            return value * factor, USD_MILLIONS
+    return value, USD_MILLIONS
+
+
 class LLMMetricExtractor:
     """Demande au LLM la valeur de la métrique, en JSON, à partir des passages."""
 
@@ -96,7 +134,7 @@ class LLMMetricExtractor:
             return None
         if value is None or not 1 <= passage <= len(results):
             return None
-        unit = str(data.get("unit") or "USD millions").strip()
+        value, unit = normalize_unit(value, data.get("unit"), metric)
         return MetricExtraction(value=value, unit=unit, passage=passage)
 
 
@@ -117,5 +155,5 @@ class RegexMetricExtractor:
                     continue
                 if match["scale"].lower() == "billion":
                     value *= 1000
-                return MetricExtraction(value=value, unit="USD millions", passage=i)
+                return MetricExtraction(value=value, unit=USD_MILLIONS, passage=i)
         return None
