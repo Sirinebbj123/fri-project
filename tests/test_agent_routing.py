@@ -41,7 +41,26 @@ def test_classify_question(question, route):
 
 def test_find_years_keeps_order_and_drops_duplicates():
     assert find_years("2018 vs 2017, puis 2018") == [2018, 2017]
-    assert find_years("FY2022 en 12345") == []  # pas d'année isolée
+    assert find_years("12345 et 202212") == []  # pas d'année isolée
+
+
+@pytest.mark.parametrize(
+    "question, years",
+    [
+        ("Compare FY2021 and FY2022 revenue for AMD", [2021, 2022]),
+        ("AMD revenue FY22 vs FY21", [2022, 2021]),
+        ("What is the FY 2019 capex of 3M?", [2019]),
+        ("FY'23 operating margin", [2023]),
+        ("Revenue in fiscal 2020 and fiscal year 2021", [2020, 2021]),
+        ("FY2018 vs 2017", [2018, 2017]),
+    ],
+)
+def test_find_years_understands_fiscal_year(question, years):
+    assert find_years(question) == years
+
+
+def test_fy_question_goes_to_comparison():
+    assert classify_question("Compare FY2021 and FY2022 revenue for AMD") == "comparaison"
 
 
 def test_comparison_route_uses_compare_years():
@@ -60,7 +79,8 @@ def test_comparison_route_uses_compare_years():
 def test_comparison_falls_back_to_rag_when_value_missing():
     llm = fake_llm(
         '{"company": "3M", "metric": "total revenue"}',
-        '{"value": null, "unit": "USD millions", "passage": 1}',
+        '{"value": null, "unit": "USD millions", "passage": 1}',  # 2017 dans le 10-K 2017
+        '{"value": null, "unit": "USD millions", "passage": 1}',  # 2017 dans le 10-K 2018
         "Je n'ai pas la valeur exacte, voir [3M, 2018, p. 42].",
     )
     answer = ask("Compare 3M total revenue 2017 vs 2018", company="3M", llm=llm)
