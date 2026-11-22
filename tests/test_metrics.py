@@ -123,10 +123,19 @@ def test_compare_years_rejects_same_year():
         tools.compare_years("3M", "total revenue", 2018, 2018)
 
 
-def test_compare_years_rejects_different_units():
+def test_compare_years_converts_billions_to_millions():
     ext = llm_extractor(
         '{"value": 31657, "unit": "USD millions", "passage": 1}',
         '{"value": 32.8, "unit": "USD billions", "passage": 1}',
+    )
+    comp = tools.compare_years("3M", "total revenue", 2017, 2018, extractor=ext)
+    assert (comp.year_b.value, comp.year_b.unit) == (32800.0, "USD millions")
+
+
+def test_compare_years_rejects_different_units():
+    ext = llm_extractor(
+        '{"value": 31657, "unit": "USD millions", "passage": 1}',
+        '{"value": 21.4, "unit": "%", "passage": 1}',
     )
     with pytest.raises(ValueError, match="Unités"):
         tools.compare_years("3M", "total revenue", 2017, 2018, extractor=ext)
