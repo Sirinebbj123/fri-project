@@ -40,6 +40,11 @@
 
 | 2026-11 | Client MCP en Python (`fri.mcp_server.client`, SDK `mcp`) en plus de MCP Inspector | Démonstration reproductible en une commande, testée en CI, avec une trace Markdown pour le rapport |
 | | Le client lance le serveur comme Claude Desktop (sous-processus, stdio) et lui transmet l'environnement | Même chemin que les vrais clients ; `INDEX_DIR` et les clés API du terminal sont pris en compte |
+HEAD
 | 2026-11 | `find_years` lit « FY2021 », « FY22 », « fiscal 2021 » | La plupart des questions FinanceBench écrivent FY : sans ça, la comparaison ne se lançait jamais |
 | | `get_financial_metric` cherche l'exercice N dans le rapport N puis N+1 ; 10-K avant 10-Q | Un 10-K reprend l'exercice précédent : une comparaison sur deux ans tient souvent dans un seul rapport |
 | | Unité choisie selon la métrique (USD millions, USD per share, %, millions of shares, ratio) | EPS, marges et nombres d'actions ne sont plus convertis en millions de dollars |
+
+| 2026-11 | `company_key` ignore Inc., Corp., Company, The… ; `resolve_company` rapproche le nom des sociétés indexées | « 3M Company », « Apple Inc. », « JPMorgan Chase & Co. » trouvent leurs rapports ; pas de réindexation |
+| | `parse_doc_info` garde le trimestre des 10-Q ; filtre `doc_type` dans BM25, Chroma et `HybridRetriever` | Une question annuelle ne reçoit plus un passage trimestriel |
+2b977e7 (docs(retrieval): explain company matching and the document type filter)

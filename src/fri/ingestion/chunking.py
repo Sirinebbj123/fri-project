@@ -11,7 +11,7 @@ from __future__ import annotations
 
 from collections.abc import Iterable
 
-from fri.ingestion.metadata import parse_doc_name
+from fri.ingestion.metadata import parse_doc_info
 from fri.ingestion.pdf_parser import Page
 from fri.schemas import Chunk, ChunkMetadata
 
@@ -86,16 +86,21 @@ def _merge(pieces: list[str], sep: str, size: int, overlap: int) -> list[str]:
 def chunk_page(page: Page, chunk_size: int = 800, overlap: int = 100) -> list[Chunk]:
     """Découpe une page en chunks ; chaque chunk garde la page d'origine.
 
-    Les métadonnées (société, année, type) viennent du nom du document
-    (``3M_2018_10K``). L'identifiant ``<doc>-p<page>-c<i>`` est stable : réindexer
-    le même PDF avec les mêmes réglages donne les mêmes identifiants.
+    Les métadonnées (société, année, trimestre, type) viennent du nom du document
+    (``3M_2018_10K``, ``PEPSICO_2023Q1_10Q``). L'identifiant ``<doc>-p<page>-c<i>`` est
+    stable : réindexer le même PDF avec les mêmes réglages donne les mêmes identifiants.
 
     Raises:
         ValueError: le nom du document ne suit pas le format FinanceBench.
     """
-    company, year, doc_type = parse_doc_name(page.doc_name)
+    info = parse_doc_info(page.doc_name)
     metadata = ChunkMetadata(
-        company=company, year=year, doc_type=doc_type, doc_name=page.doc_name, page=page.page
+        company=info.company,
+        year=info.year,
+        quarter=info.quarter,
+        doc_type=info.doc_type,
+        doc_name=page.doc_name,
+        page=page.page,
     )
     return [
         Chunk(id=f"{page.doc_name}-p{page.page}-c{i}", text=text, metadata=metadata)
@@ -115,4 +120,5 @@ def search_text(chunk: Chunk) -> str:
     recherche quand la question nomme la société ou l'année sans filtre.
     """
     m = chunk.metadata
-    return f"{m.company} {m.year} {m.doc_type.value}\n{chunk.text}"
+    period = f"{m.year} Q{m.quarter}" if m.quarter else str(m.year)
+    return f"{m.company} {period} {m.doc_type.value}\n{chunk.text}"
