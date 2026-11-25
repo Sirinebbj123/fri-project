@@ -12,6 +12,7 @@ L'agent LangGraph est le centre du système : il reçoit la question depuis l'in
 4. **Agent** (`fri.agent`) : routage simple / calcul / comparaison, réponse citée.
    Première version (retrieve -> answer) et `search_filings` : voir [`agent.md`](agent.md).
 5. **Qualité** (`evaluation/`, `finetuning/`) : benchmark FinanceBench ; l'embedding fine-tuné remplace l'original s'il est meilleur.
+   Commandes et métriques : voir [`evaluation.md`](evaluation.md).
 
 ## Contrats
 
