@@ -32,19 +32,10 @@
 | 2026-11 | `_load_index_retriever()` renvoie `HybridRetriever.load()` ; index absent = pas de `manifest.json` | Un index à moitié construit n'est jamais chargé |
 | | Le serveur MCP charge l'index et le modèle au démarrage, et démarre quand même si l'index manque | Premier appel rapide dans Claude Desktop ; erreur visible dans les logs, message clair dans l'outil |
 | | `DATA_DIR` / `INDEX_DIR` relatifs résolus depuis la racine du dépôt | Claude Desktop lance le serveur depuis un autre dossier que le dépôt |
+| 2026-11 | Évaluation sur les seules questions dont le document est indexé ; rangs comptés en pages distinctes du bon document | Ne pas compter comme ratée une question dont le PDF n'est pas dans l'index ; plusieurs chunks d'une page = une page |
+| | Filtres société + année du document activés par défaut pendant l'évaluation, `--no-filters` en option | Même situation que l'utilisateur qui choisit la société dans l'interface |
+| | Un seul appel au juge par question : exactitude + fidélité en JSON | Deux fois moins d'appels à l'API ; verdict illisible = faux |
+| | CSV de génération écrit question par question, reprise automatique | Les quotas des API gratuites coupent souvent les longues séries |
+| | Split train / test par société (30 % en test, graine 42), calculé sur les 150 questions | Le modèle fine-tuné ne voit jamais les rapports du test ; split stable quel que soit l'index |
+| | Fine-tuning sur le texte des pages de preuve FinanceBench, `MultipleNegativesRankingLoss` | Paires positives fiables sans annotation ; négatifs gratuits dans le paquet |
 
-| 2026-11 | Mise à jour incrémentale : empreinte SHA-256 de chaque PDF dans `manifest.json`, `--update` ne recalcule que les rapports nouveaux ou modifiés | Ajouter un rapport prend une minute au lieu de reconstruire 28 000 chunks (~36 min) |
-| | Un rapport est remplacé en entier (suppression de ses chunks dans Chroma et `chunks.jsonl`, puis ajout) | Ids de chunks stables et aucun reste de l'ancienne version, même si le nombre de pages change |
-| | Réglages de l'index existant (modèle, taille des chunks) réutilisés par `--update` | Jamais deux réglages mélangés dans le même index |
-| | Pas de manifeste pendant la mise à jour ; `--remove` mémorisé (`excluded`) ; PDF disparus retirés seulement avec `--prune` | Un index à moitié modifié n'est jamais chargé ; un rapport retiré ne revient pas tout seul ; pas de perte si un PDF est déplacé |
-
-| 2026-11 | Client MCP en Python (`fri.mcp_server.client`, SDK `mcp`) en plus de MCP Inspector | Démonstration reproductible en une commande, testée en CI, avec une trace Markdown pour le rapport |
-| | Le client lance le serveur comme Claude Desktop (sous-processus, stdio) et lui transmet l'environnement | Même chemin que les vrais clients ; `INDEX_DIR` et les clés API du terminal sont pris en compte |
-HEAD
-| 2026-11 | `find_years` lit « FY2021 », « FY22 », « fiscal 2021 » | La plupart des questions FinanceBench écrivent FY : sans ça, la comparaison ne se lançait jamais |
-| | `get_financial_metric` cherche l'exercice N dans le rapport N puis N+1 ; 10-K avant 10-Q | Un 10-K reprend l'exercice précédent : une comparaison sur deux ans tient souvent dans un seul rapport |
-| | Unité choisie selon la métrique (USD millions, USD per share, %, millions of shares, ratio) | EPS, marges et nombres d'actions ne sont plus convertis en millions de dollars |
-
-| 2026-11 | `company_key` ignore Inc., Corp., Company, The… ; `resolve_company` rapproche le nom des sociétés indexées | « 3M Company », « Apple Inc. », « JPMorgan Chase & Co. » trouvent leurs rapports ; pas de réindexation |
-| | `parse_doc_info` garde le trimestre des 10-Q ; filtre `doc_type` dans BM25, Chroma et `HybridRetriever` | Une question annuelle ne reçoit plus un passage trimestriel |
-2b977e7 (docs(retrieval): explain company matching and the document type filter)
